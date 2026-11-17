@@ -2,6 +2,7 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import { verifyToken } from './middlewares/auth.middleware';
 import { errorHandler } from './middlewares/error.middleware';
+import servicesRouter from './routes/services.routes';
 
 const app: Application = express();
 
@@ -17,6 +18,9 @@ app.use(express.json());
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'fixmate-backend' });
 });
+
+// Routes
+app.use('/api/services', servicesRouter);
 
 // Example protected route: returns the decoded JWT user
 app.get('/api/auth/me', verifyToken, (req, res) => {
