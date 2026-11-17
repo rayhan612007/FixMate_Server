@@ -3,6 +3,7 @@ import cors from 'cors';
 import { verifyToken } from './middlewares/auth.middleware';
 import { errorHandler } from './middlewares/error.middleware';
 import servicesRouter from './routes/services.routes';
+import bookingsRouter from './routes/bookings.routes';
 
 const app: Application = express();
 
@@ -21,6 +22,7 @@ app.get('/health', (_req, res) => {
 
 // Routes
 app.use('/api/services', servicesRouter);
+app.use('/api/bookings', bookingsRouter);
 
 // Example protected route: returns the decoded JWT user
 app.get('/api/auth/me', verifyToken, (req, res) => {
