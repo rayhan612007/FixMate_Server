@@ -5,6 +5,8 @@ import { errorHandler } from './middlewares/error.middleware';
 import servicesRouter from './routes/services.routes';
 import bookingsRouter from './routes/bookings.routes';
 import paymentsRouter, { stripeWebhook } from './routes/payments.routes';
+import adminRouter from './routes/admin.routes';
+import uploadRouter from './routes/upload.routes';
 
 const app: Application = express();
 
@@ -29,6 +31,8 @@ app.get('/health', (_req, res) => {
 app.use('/api/services', servicesRouter);
 app.use('/api/bookings', bookingsRouter);
 app.use('/api/payments', paymentsRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api/upload', uploadRouter);
 
 // Example protected route: returns the decoded JWT user
 app.get('/api/auth/me', verifyToken, (req, res) => {
