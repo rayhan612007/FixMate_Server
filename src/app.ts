@@ -4,6 +4,7 @@ import { verifyToken } from './middlewares/auth.middleware';
 import { errorHandler } from './middlewares/error.middleware';
 import servicesRouter from './routes/services.routes';
 import bookingsRouter from './routes/bookings.routes';
+import paymentsRouter, { stripeWebhook } from './routes/payments.routes';
 
 const app: Application = express();
 
@@ -13,6 +14,10 @@ app.use(
     credentials: true,
   }),
 );
+
+// Stripe webhook MUST read the raw body for signature verification — mount before express.json()
+app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
+
 app.use(express.json());
 
 // Health check
@@ -23,6 +28,7 @@ app.get('/health', (_req, res) => {
 // Routes
 app.use('/api/services', servicesRouter);
 app.use('/api/bookings', bookingsRouter);
+app.use('/api/payments', paymentsRouter);
 
 // Example protected route: returns the decoded JWT user
 app.get('/api/auth/me', verifyToken, (req, res) => {
