@@ -5,36 +5,60 @@ import { HttpError, verifyAdmin, verifyTechnician } from '../middlewares/auth.mi
 const router = Router();
 
 const CATEGORIES = ['Smartphone', 'Laptop & PC', 'AC', 'Refrigerator', 'TV', 'Washing Machine', 'Electrical'];
+const SERVICE_MODES = ['Home Visit', 'Shop Drop-off'];
 
 function requireUser(req) {
   if (!req.user) throw new HttpError(401, 'Unauthorized');
   return req.user;
 }
 
+/** Escape regex metacharacters so search input is matched literally (a query like "laptop (dell)" must not throw a 500). */
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Build the MongoDB filter + sort for the public Browse Services list (Challenge 1).
+ * All searching, filtering and sorting is executed inside MongoDB — nothing is
+ * filtered with JavaScript .filter() on the client.
+ */
+export function buildServicesListQuery(params = {}) {
+  const { search, category, serviceMode, sort } = params;
+
+  // Public page only shows approved + available services
+  const filter = { approvalStatus: 'approved', isAvailable: true };
+
+  // Keyword search across title OR category (case-insensitive, literal substring match)
+  if (typeof search === 'string' && search.trim()) {
+    const rx = new RegExp(escapeRegex(search.trim()), 'i');
+    filter.$or = [{ title: rx }, { category: rx }];
+  }
+
+  // Category filter — whitelisted enum, case-tolerant so /services?category=ac also works
+  if (typeof category === 'string' && category.trim()) {
+    const match = CATEGORIES.find((c) => c.toLowerCase() === category.trim().toLowerCase());
+    if (match) filter.category = match;
+  }
+
+  // Service mode filter (Home Visit / Shop Drop-off)
+  if (typeof serviceMode === 'string' && serviceMode.trim()) {
+    const match = SERVICE_MODES.find((m) => m.toLowerCase() === serviceMode.trim().toLowerCase());
+    if (match) filter.serviceMode = match;
+  }
+
+  // Sort: Newest (default) | Price: Low to High | Price: High to Low — stable _id tie-breaker
+  let sortQuery = { createdAt: -1, _id: -1 };
+  if (sort === 'price-asc') sortQuery = { basePrice: 1, _id: -1 };
+  else if (sort === 'price-desc') sortQuery = { basePrice: -1, _id: -1 };
+
+  return { filter, sort: sortQuery };
+}
+
 /** GET /api/services — public list with server-side search, filter, sort */
 router.get('/', async (req, res, next) => {
   try {
-    const { search, category, serviceMode, sort } = req.query;
-
-    // Public page only shows approved + available services
-    const query = { approvalStatus: 'approved', isAvailable: true };
-
-    if (typeof search === 'string' && search.trim()) {
-      const rx = new RegExp(search.trim(), 'i');
-      query.$or = [{ title: rx }, { category: rx }];
-    }
-    if (typeof category === 'string' && CATEGORIES.includes(category)) {
-      query.category = category;
-    }
-    if (serviceMode === 'Home Visit' || serviceMode === 'Shop Drop-off') {
-      query.serviceMode = serviceMode;
-    }
-
-    let sortQuery = { createdAt: -1 }; // newest default
-    if (sort === 'price-asc') sortQuery = { basePrice: 1 };
-    else if (sort === 'price-desc') sortQuery = { basePrice: -1 };
-
-    const services = await Service.find(query).sort(sortQuery);
+    const { filter, sort } = buildServicesListQuery(req.query);
+    const services = await Service.find(filter).sort(sort);
     res.json({ success: true, data: services });
   } catch (err) {
     next(err);
