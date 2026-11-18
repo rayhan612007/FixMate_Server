@@ -59,7 +59,3 @@ export async function ensureIndexes() {
   }
 }
 
-// Call this only when your application terminates
-export async function disconnectFromMongoDB() {
-  await client.close();
-}
