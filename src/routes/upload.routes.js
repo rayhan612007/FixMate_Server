@@ -3,15 +3,15 @@ import { HttpError } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
+const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
+
 /**
- * POST /api/upload — ImgBB upload proxy.
- * Accepts { image: base64 (with or without data: prefix) } so the ImgBB API
- * key stays server-side.
+ * POST /api/upload — proxy for ImgBB so the API key never reaches the browser.
  *
- * This endpoint is intentionally public: the sign-up form uploads an avatar
- * before the account (and therefore session token) exists. The base64 format
- * is validated; there is no application-level size limit (the JSON body
- * parser limit applies).
+ * Body: { image: base64 string, with or without a "data:image/...;base64," prefix }.
+ * This route is public on purpose: the sign-up form uploads an avatar before
+ * the account (and its session token) exists. The base64 format is validated,
+ * and the JSON body limit in app.js is the only size limit.
  */
 router.post('/', async (req, res, next) => {
   try {
@@ -30,14 +30,17 @@ router.post('/', async (req, res, next) => {
 
     const form = new FormData();
     form.append('image', base64);
-    const resp = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+
+    const response = await fetch(`${IMGBB_UPLOAD_URL}?key=${apiKey}`, {
       method: 'POST',
       body: form,
     });
-    const json = await resp.json();
+    const json = await response.json();
+
     if (!json.success || !json.data?.url) {
       throw new HttpError(502, json.error?.message ?? 'Image upload failed');
     }
+
     res.json({ success: true, url: json.data.url });
   } catch (err) {
     next(err);

@@ -2,16 +2,13 @@ import { Router } from 'express';
 import { users } from '../models/User.js';
 import { services } from '../models/Service.js';
 import { toObjectId } from '../db.js';
-import { HttpError, verifyAdmin, verifyToken } from '../middlewares/auth.middleware.js';
+import { HttpError, getCurrentUser, verifyAdmin, verifyToken } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
-function requireUser(req) {
-  if (!req.user) throw new HttpError(401, 'Unauthorized');
-  return req.user;
-}
+const ROLES = ['customer', 'technician', 'admin'];
 
-/** GET /api/admin/users — admin lists all users */
+/** GET /api/admin/users — admin lists all users. */
 router.get('/users', verifyAdmin, async (_req, res, next) => {
   try {
     const data = await users().find({}).sort({ createdAt: -1 }).toArray();
@@ -21,16 +18,19 @@ router.get('/users', verifyAdmin, async (_req, res, next) => {
   }
 });
 
-/** PATCH /api/admin/users/:id/role — admin changes a role; admin cannot change their own role */
+/** PATCH /api/admin/users/:id/role — admin changes a role; not their own. */
 router.patch('/users/:id/role', verifyAdmin, async (req, res, next) => {
   try {
-    const user = requireUser(req);
+    const user = getCurrentUser(req);
     const { role } = req.body ?? {};
-    if (role !== 'customer' && role !== 'technician' && role !== 'admin') {
+
+    if (!ROLES.includes(role)) {
       throw new HttpError(400, 'role must be customer, technician or admin');
     }
+
     const oid = toObjectId(req.params.id);
     if (!oid) throw new HttpError(404, 'User not found');
+
     const target = await users().findOne({ _id: oid });
     if (!target) throw new HttpError(404, 'User not found');
     if (target.email === user.email) {
@@ -39,13 +39,18 @@ router.patch('/users/:id/role', verifyAdmin, async (req, res, next) => {
 
     const updatedAt = new Date();
     await users().updateOne({ _id: oid }, { $set: { role, updatedAt } });
-    res.json({ success: true, message: `Role updated to ${role}`, data: { ...target, role, updatedAt } });
+
+    res.json({
+      success: true,
+      message: `Role updated to ${role}`,
+      data: { ...target, role, updatedAt },
+    });
   } catch (err) {
     next(err);
   }
 });
 
-/** GET /api/admin/stats — dashboard overview cards */
+/** GET /api/admin/stats — dashboard overview cards. */
 router.get('/stats', verifyAdmin, async (_req, res, next) => {
   try {
     const [totalUsers, totalTechnicians, pendingServices] = await Promise.all([
@@ -53,16 +58,18 @@ router.get('/stats', verifyAdmin, async (_req, res, next) => {
       users().countDocuments({ role: 'technician' }),
       services().countDocuments({ approvalStatus: 'pending' }),
     ]);
+
     res.json({ success: true, data: { totalUsers, totalTechnicians, pendingServices } });
   } catch (err) {
     next(err);
   }
 });
 
-/** PATCH /api/users/profile — any logged-in user updates their profile */
+/** PATCH /api/admin/profile — any logged-in user updates their profile. */
 router.patch('/profile', verifyToken, async (req, res, next) => {
   try {
-    const user = requireUser(req);
+    const user = getCurrentUser(req);
+
     const target = await users().findOne({ email: user.email });
     if (!target) throw new HttpError(404, 'User not found');
 
@@ -78,6 +85,7 @@ router.patch('/profile', verifyToken, async (req, res, next) => {
       updates.updatedAt = new Date();
       await users().updateOne({ _id: target._id }, { $set: updates });
     }
+
     res.json({ success: true, message: 'Profile updated', data: { ...target, ...updates } });
   } catch (err) {
     next(err);

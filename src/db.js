@@ -1,17 +1,7 @@
 import { MongoClient, ObjectId } from 'mongodb';
 
-
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.MONGODB_DB;
-
-/** Use the db name from the URI path (…mongodb.net/ has none → default "fixmate") */
-function dbNameFromUri(uri) {
-  try {
-    return new URL(uri).pathname.replace(/^\//, '');
-  } catch {
-    return 'fixmate';
-  }
-}
 
 const client = new MongoClient(MONGODB_URI);
 
@@ -26,36 +16,37 @@ export async function connectToMongoDB() {
   }
 }
 
-/** The database handle every model/collection uses */
+/** The database handle every model/collection uses. */
 export function getDb() {
   return client.db(DB_NAME);
 }
 
-/** string → ObjectId, or null for anything that is not a 24-char hex id */
+/** Converts a 24-character hex string to an ObjectId; anything else becomes null. */
 export function toObjectId(id) {
   if (typeof id !== 'string' || !/^[0-9a-fA-F]{24}$/.test(id)) return null;
   return new ObjectId(id);
 }
 
-/** Indexes the app depends on (idempotent — safe to run on every boot) */
+/** Indexes the app depends on. Creating the same index twice is safe. */
+const INDEXES = [
+  // One payment per Stripe session, ever (webhook + success page can race).
+  { collection: 'payments', keys: { stripeSessionId: 1 }, options: { unique: true } },
+  { collection: 'payments', keys: { customerEmail: 1, paidAt: -1 } },
+  { collection: 'bookings', keys: { customerEmail: 1, createdAt: -1 } },
+  { collection: 'bookings', keys: { technicianEmail: 1, createdAt: -1 } },
+  { collection: 'bookings', keys: { status: 1 } },
+  { collection: 'services', keys: { technicianEmail: 1, createdAt: -1 } },
+  { collection: 'services', keys: { approvalStatus: 1, isAvailable: 1 } },
+];
+
 export async function ensureIndexes() {
   const db = getDb();
-  const indexJobs = [
-    // one payment per Stripe session, ever (webhook + success page can race)
-    ['payments', { stripeSessionId: 1 }, { unique: true }],
-    ['payments', { customerEmail: 1, paidAt: -1 }],
-    ['bookings', { customerEmail: 1, createdAt: -1 }],
-    ['bookings', { technicianEmail: 1, createdAt: -1 }],
-    ['bookings', { status: 1 }],
-    ['services', { technicianEmail: 1, createdAt: -1 }],
-    ['services', { approvalStatus: 1, isAvailable: 1 }],
-  ];
-  for (const [name, keys, options] of indexJobs) {
+
+  for (const { collection, keys, options } of INDEXES) {
     try {
-      await db.collection(name).createIndex(keys, options);
+      await db.collection(collection).createIndex(keys, options);
     } catch (err) {
-      console.warn(`Could not create index on ${name}:`, err.message);
+      console.warn(`Could not create index on ${collection}:`, err.message);
     }
   }
 }
-
