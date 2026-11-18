@@ -1,13 +1,13 @@
 import { MongoClient, ObjectId } from 'mongodb';
 
-// Your Atlas URI (mongodb+srv://...) goes in backend/.env as MONGODB_URI — never in git
-const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27017/fixmate';
-const DB_NAME = process.env.MONGODB_DB ?? dbNameFromUri(MONGODB_URI);
+
+const MONGODB_URI = process.env.MONGODB_URI;
+const DB_NAME = process.env.MONGODB_DB;
 
 /** Use the db name from the URI path (…mongodb.net/ has none → default "fixmate") */
 function dbNameFromUri(uri) {
   try {
-    return new URL(uri).pathname.replace(/^\//, '') || 'fixmate';
+    return new URL(uri).pathname.replace(/^\//, '');
   } catch {
     return 'fixmate';
   }
@@ -22,7 +22,7 @@ export async function connectToMongoDB() {
     return client;
   } catch (err) {
     console.dir(err);
-    throw err; // fail fast — never start the server without a database
+    throw err;
   }
 }
 
@@ -54,7 +54,7 @@ export async function ensureIndexes() {
     try {
       await db.collection(name).createIndex(keys, options);
     } catch (err) {
-      console.warn(`⚠️ Could not create index on ${name}:`, err.message);
+      console.warn(`Could not create index on ${name}:`, err.message);
     }
   }
 }

@@ -1,13 +1,19 @@
 import { Router } from 'express';
-import { HttpError, verifyToken } from '../middlewares/auth.middleware.js';
+import { HttpError } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
 /**
  * POST /api/upload — ImgBB upload proxy.
- * Accepts { image: base64 (no data: prefix) } so the ImgBB API key stays server-side.
+ * Accepts { image: base64 (with or without data: prefix) } so the ImgBB API
+ * key stays server-side.
+ *
+ * This endpoint is intentionally public: the sign-up form uploads an avatar
+ * before the account (and therefore session token) exists. The base64 format
+ * is validated; there is no application-level size limit (the JSON body
+ * parser limit applies).
  */
-router.post('/', verifyToken, async (req, res, next) => {
+router.post('/', async (req, res, next) => {
   try {
     const apiKey = process.env.IMGBB_API_KEY;
     if (!apiKey) throw new HttpError(500, 'ImgBB is not configured');
@@ -17,8 +23,13 @@ router.post('/', verifyToken, async (req, res, next) => {
       throw new HttpError(400, 'image (base64) is required');
     }
 
+    const base64 = image.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, '');
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+      throw new HttpError(400, 'image must be valid base64');
+    }
+
     const form = new FormData();
-    form.append('image', image);
+    form.append('image', base64);
     const resp = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
       method: 'POST',
       body: form,

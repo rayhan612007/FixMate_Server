@@ -12,7 +12,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL ?? 'http://localhost:3000',
+    origin: process.env.CLIENT_URL,
     credentials: true,
   }),
 );
@@ -20,12 +20,12 @@ app.use(
 // Stripe webhook MUST read the raw body for signature verification — mount before express.json()
 app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 
-app.use(express.json());
+// Generous limit so base64 image uploads (avatar/service photos) are accepted.
+app.use(express.json({ limit: '100mb' }));
 
-// Health check
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'fixmate-backend' });
-});
+app.get('/', (req, res) => {
+  res.send({ message: 'This Fixmate Home Route' })
+})
 
 // Routes
 app.use('/api/services', servicesRouter);
