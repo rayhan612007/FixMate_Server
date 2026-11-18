@@ -1,14 +1,14 @@
-import express, { Application } from 'express';
+import express from 'express';
 import cors from 'cors';
-import { verifyToken } from './middlewares/auth.middleware';
-import { errorHandler } from './middlewares/error.middleware';
-import servicesRouter from './routes/services.routes';
-import bookingsRouter from './routes/bookings.routes';
-import paymentsRouter, { stripeWebhook } from './routes/payments.routes';
-import adminRouter from './routes/admin.routes';
-import uploadRouter from './routes/upload.routes';
+import { verifyToken } from './middlewares/auth.middleware.js';
+import { errorHandler } from './middlewares/error.middleware.js';
+import servicesRouter from './routes/services.routes.js';
+import bookingsRouter from './routes/bookings.routes.js';
+import paymentsRouter, { stripeWebhook } from './routes/payments.routes.js';
+import adminRouter from './routes/admin.routes.js';
+import uploadRouter from './routes/upload.routes.js';
 
-const app: Application = express();
+const app = express();
 
 app.use(
   cors({

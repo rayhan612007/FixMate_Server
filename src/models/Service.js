@@ -27,20 +27,4 @@ const serviceSchema = new mongoose.Schema(
   { timestamps: true }, // createdAt / updatedAt
 );
 
-export interface ServiceDoc extends mongoose.Document {
-  title: string;
-  category: string;
-  description: string;
-  image: string;
-  basePrice: number;
-  estimatedDuration: string;
-  serviceMode: string;
-  serviceArea: string;
-  technicianName: string;
-  technicianEmail: string;
-  approvalStatus: 'pending' | 'approved' | 'rejected';
-  isAvailable: boolean;
-  createdAt: Date;
-}
-
-export const Service = mongoose.model<ServiceDoc>('Service', serviceSchema);
+export const Service = mongoose.model('Service', serviceSchema);

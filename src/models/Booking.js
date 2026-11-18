@@ -30,24 +30,4 @@ const bookingSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-export interface BookingDoc extends mongoose.Document {
-  serviceId: string;
-  serviceTitle: string;
-  serviceImage: string;
-  category: string;
-  basePrice: number;
-  technicianName: string;
-  technicianEmail: string;
-  customerName: string;
-  customerEmail: string;
-  customerPhone: string;
-  address: string;
-  preferredDate: Date;
-  problemDescription: string;
-  status: 'requested' | 'accepted' | 'rejected' | 'in-progress' | 'completed' | 'cancelled';
-  finalAmount: number;
-  paymentStatus: 'unpaid' | 'paid';
-  createdAt: Date;
-}
-
-export const Booking = mongoose.model<BookingDoc>('Booking', bookingSchema);
+export const Booking = mongoose.model('Booking', bookingSchema);

@@ -1,13 +1,12 @@
-import { Request, Response, NextFunction, Router } from 'express';
+import { Router } from 'express';
 import Stripe from 'stripe';
-import { HttpError, verifyAdmin, verifyCustomer } from '../middlewares/auth.middleware';
-import { AuthRequest } from '../types/express';
-import { Booking } from '../models/Booking';
-import { Payment } from '../models/Payment';
+import { HttpError, verifyAdmin, verifyCustomer } from '../middlewares/auth.middleware.js';
+import { Booking } from '../models/Booking.js';
+import { Payment } from '../models/Payment.js';
 
 const router = Router();
 
-function getStripe(): Stripe {
+function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key || !key.startsWith('sk_test_')) {
     throw new HttpError(500, 'Stripe is not configured (test mode key missing)');
@@ -15,7 +14,7 @@ function getStripe(): Stripe {
   return new Stripe(key);
 }
 
-function requireUser(req: Request) {
+function requireUser(req) {
   if (!req.user) throw new HttpError(401, 'Unauthorized');
   return req.user;
 }
@@ -25,7 +24,7 @@ function requireUser(req: Request) {
  * the Stripe webhook. The same payment must never be saved twice
  * (uniqueness enforced on stripeSessionId, checked again here).
  */
-export async function savePaymentFromSession(session: Stripe.Checkout.Session): Promise<'saved' | 'duplicate'> {
+export async function savePaymentFromSession(session) {
   const existing = await Payment.findOne({ stripeSessionId: session.id });
   if (existing) return 'duplicate';
 
@@ -63,7 +62,7 @@ export async function savePaymentFromSession(session: Stripe.Checkout.Session): 
 }
 
 /** POST /api/payments/create-checkout-session — customer pays a completed & unpaid booking */
-router.post('/create-checkout-session', verifyCustomer, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/create-checkout-session', verifyCustomer, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const { bookingId } = req.body ?? {};
@@ -104,7 +103,7 @@ router.post('/create-checkout-session', verifyCustomer, async (req: AuthRequest,
 });
 
 /** GET /api/payments/verify?session_id=... — success-page verification */
-router.get('/verify', verifyCustomer, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/verify', verifyCustomer, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const sessionId = req.query.session_id;
@@ -139,7 +138,7 @@ router.get('/verify', verifyCustomer, async (req: AuthRequest, res: Response, ne
 });
 
 /** GET /api/payments/my — customer payment history */
-router.get('/my', verifyCustomer, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/my', verifyCustomer, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const payments = await Payment.find({ customerEmail: user.email }).sort({ paidAt: -1 });
@@ -150,7 +149,7 @@ router.get('/my', verifyCustomer, async (req: AuthRequest, res: Response, next: 
 });
 
 /** GET /api/payments/admin/all — admin transactions with total revenue */
-router.get('/admin/all', verifyAdmin, async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/admin/all', verifyAdmin, async (_req, res, next) => {
   try {
     const payments = await Payment.find().sort({ paidAt: -1 });
     const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
@@ -162,18 +161,18 @@ router.get('/admin/all', verifyAdmin, async (_req: AuthRequest, res: Response, n
 
 /**
  * POST /api/payments/webhook — Stripe webhook (raw body, signature-verified).
- * Mounted BEFORE express.json() in app.ts. Idempotent via savePaymentFromSession.
+ * Mounted BEFORE express.json() in app.js. Idempotent via savePaymentFromSession.
  */
-export async function stripeWebhook(req: Request, res: Response) {
+export async function stripeWebhook(req, res) {
   const stripe = getStripe();
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) {
     res.status(500).send('Webhook secret is not configured');
     return;
   }
-  let event: Stripe.Event;
+  let event;
   try {
-    event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'] as string, secret);
+    event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], secret);
   } catch {
     res.status(400).send('Webhook signature verification failed');
     return;
@@ -181,7 +180,7 @@ export async function stripeWebhook(req: Request, res: Response) {
 
   try {
     if (event.type === 'checkout.session.completed') {
-      await savePaymentFromSession(event.data.object as Stripe.Checkout.Session);
+      await savePaymentFromSession(event.data.object);
     }
     res.json({ received: true });
   } catch {

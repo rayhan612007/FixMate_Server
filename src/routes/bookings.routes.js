@@ -1,14 +1,13 @@
-import { Request, Response, NextFunction, Router } from 'express';
-import { Service } from '../models/Service';
-import { Booking } from '../models/Booking';
-import { HttpError, verifyAdmin, verifyCustomer, verifyTechnician } from '../middlewares/auth.middleware';
-import { AuthRequest } from '../types/express';
+import { Router } from 'express';
+import { Service } from '../models/Service.js';
+import { Booking } from '../models/Booking.js';
+import { HttpError, verifyAdmin, verifyCustomer, verifyTechnician } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
-const ACTIVE_STATUSES = ['requested', 'accepted', 'in-progress'] as const;
+const ACTIVE_STATUSES = ['requested', 'accepted', 'in-progress'];
 
-function requireUser(req: Request) {
+function requireUser(req) {
   if (!req.user) throw new HttpError(401, 'Unauthorized');
   return req.user;
 }
@@ -17,7 +16,7 @@ function requireUser(req: Request) {
  * POST /api/bookings — customer sends a repair request.
  * Server-enforced: only customers, no duplicate active request per service, valid date, ≥20 chars problem.
  */
-router.post('/', verifyCustomer, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/', verifyCustomer, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const { serviceId, customerPhone, address, preferredDate, problemDescription } = req.body ?? {};
@@ -85,7 +84,7 @@ router.post('/', verifyCustomer, async (req: AuthRequest, res: Response, next: N
 });
 
 /** GET /api/bookings/my — customer's own bookings */
-router.get('/my', verifyCustomer, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/my', verifyCustomer, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const bookings = await Booking.find({ customerEmail: user.email }).sort({ createdAt: -1 });
@@ -96,7 +95,7 @@ router.get('/my', verifyCustomer, async (req: AuthRequest, res: Response, next: 
 });
 
 /** GET /api/bookings/technician — bookings for the logged-in technician */
-router.get('/technician', verifyTechnician, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/technician', verifyTechnician, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const bookings = await Booking.find({ technicianEmail: user.email }).sort({ createdAt: -1 });
@@ -110,7 +109,7 @@ router.get('/technician', verifyTechnician, async (req: AuthRequest, res: Respon
  * PATCH /api/bookings/:id/status — technician (owner) moves the job forward.
  * Pipeline: requested → accepted | rejected; accepted → in-progress; in-progress → completed (+finalAmount > 0).
  */
-router.patch('/:id/status', verifyTechnician, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.patch('/:id/status', verifyTechnician, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const { id } = req.params;
@@ -146,7 +145,7 @@ router.patch('/:id/status', verifyTechnician, async (req: AuthRequest, res: Resp
 });
 
 /** PATCH /api/bookings/:id/cancel — customer cancels own booking while still 'requested' */
-router.patch('/:id/cancel', verifyCustomer, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.patch('/:id/cancel', verifyCustomer, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const { id } = req.params;
@@ -168,7 +167,7 @@ router.patch('/:id/cancel', verifyCustomer, async (req: AuthRequest, res: Respon
 });
 
 /** GET /api/bookings/admin/all — admin sees every booking (read-only) */
-router.get('/admin/all', verifyAdmin, async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/admin/all', verifyAdmin, async (_req, res, next) => {
   try {
     const bookings = await Booking.find().sort({ createdAt: -1 });
     res.json({ success: true, data: bookings });

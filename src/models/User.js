@@ -18,15 +18,4 @@ const userSchema = new mongoose.Schema(
   { collection: 'user', strict: false, timestamps: true },
 );
 
-export interface UserDoc extends mongoose.Document {
-  name: string;
-  email: string;
-  image?: string;
-  role: 'customer' | 'technician' | 'admin';
-  phone?: string;
-  area?: string;
-  bio?: string;
-  createdAt: Date;
-}
-
-export const User = mongoose.model<UserDoc>('User', userSchema);
+export const User = mongoose.model('User', userSchema);

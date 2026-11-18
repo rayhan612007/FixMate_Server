@@ -1,24 +1,23 @@
-import { Request, Response, NextFunction, Router } from 'express';
-import { Service } from '../models/Service';
-import { AuthUser, HttpError, verifyAdmin, verifyTechnician } from '../middlewares/auth.middleware';
-import { AuthRequest } from '../types/express';
+import { Router } from 'express';
+import { Service } from '../models/Service.js';
+import { HttpError, verifyAdmin, verifyTechnician } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
 const CATEGORIES = ['Smartphone', 'Laptop & PC', 'AC', 'Refrigerator', 'TV', 'Washing Machine', 'Electrical'];
 
-function requireUser(req: Request): AuthUser {
+function requireUser(req) {
   if (!req.user) throw new HttpError(401, 'Unauthorized');
   return req.user;
 }
 
 /** GET /api/services — public list with server-side search, filter, sort */
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', async (req, res, next) => {
   try {
     const { search, category, serviceMode, sort } = req.query;
 
     // Public page only shows approved + available services
-    const query: Record<string, unknown> = { approvalStatus: 'approved', isAvailable: true };
+    const query = { approvalStatus: 'approved', isAvailable: true };
 
     if (typeof search === 'string' && search.trim()) {
       const rx = new RegExp(search.trim(), 'i');
@@ -31,7 +30,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       query.serviceMode = serviceMode;
     }
 
-    let sortQuery: Record<string, 1 | -1> = { createdAt: -1 }; // newest default
+    let sortQuery = { createdAt: -1 }; // newest default
     if (sort === 'price-asc') sortQuery = { basePrice: 1 };
     else if (sort === 'price-desc') sortQuery = { basePrice: -1 };
 
@@ -43,7 +42,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 });
 
 /** GET /api/services/:id — public details (only approved + available) */
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const idStr = typeof id === 'string' ? id : String(id);
@@ -62,7 +61,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
 });
 
 /** POST /api/services — technician adds a service (starts pending) */
-router.post('/', verifyTechnician, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/', verifyTechnician, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const {
@@ -107,7 +106,7 @@ router.post('/', verifyTechnician, async (req: AuthRequest, res: Response, next:
 });
 
 /** GET /api/services/my/all — technician's own services (any approval status) */
-router.get('/my/all', verifyTechnician, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/my/all', verifyTechnician, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const services = await Service.find({ technicianEmail: user.email }).sort({ createdAt: -1 });
@@ -118,7 +117,7 @@ router.get('/my/all', verifyTechnician, async (req: AuthRequest, res: Response, 
 });
 
 /** PATCH /api/services/:id — technician edits own service; approval resets to pending */
-router.patch('/:id', verifyTechnician, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.patch('/:id', verifyTechnician, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const { id } = req.params;
@@ -128,10 +127,10 @@ router.patch('/:id', verifyTechnician, async (req: AuthRequest, res: Response, n
       throw new HttpError(403, 'Forbidden: you do not own this service');
     }
 
-    const allowed = ['title', 'category', 'description', 'image', 'basePrice', 'estimatedDuration', 'serviceMode', 'serviceArea', 'isAvailable'] as const;
+    const allowed = ['title', 'category', 'description', 'image', 'basePrice', 'estimatedDuration', 'serviceMode', 'serviceArea', 'isAvailable'];
     for (const field of allowed) {
       if (req.body?.[field] !== undefined) {
-        (service as unknown as Record<string, unknown>)[field] = req.body[field];
+        service[field] = req.body[field];
       }
     }
     if (req.body?.isAvailable === undefined) {
@@ -146,7 +145,7 @@ router.patch('/:id', verifyTechnician, async (req: AuthRequest, res: Response, n
 });
 
 /** DELETE /api/services/:id — technician deletes own service */
-router.delete('/:id', verifyTechnician, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.delete('/:id', verifyTechnician, async (req, res, next) => {
   try {
     const user = requireUser(req);
     const { id } = req.params;
@@ -163,7 +162,7 @@ router.delete('/:id', verifyTechnician, async (req: AuthRequest, res: Response, 
 });
 
 /** PATCH /api/services/:id/approval — admin approves/rejects */
-router.patch('/:id/approval', verifyAdmin, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.patch('/:id/approval', verifyAdmin, async (req, res, next) => {
   try {
     const { id } = req.params;
     const { approvalStatus } = req.body ?? {};
@@ -183,7 +182,7 @@ router.patch('/:id/approval', verifyAdmin, async (req: AuthRequest, res: Respons
 });
 
 /** GET /api/services/admin/all — admin sees all services (any status) */
-router.get('/admin/all', verifyAdmin, async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/admin/all', verifyAdmin, async (_req, res, next) => {
   try {
     const services = await Service.find().sort({ createdAt: -1 });
     res.json({ success: true, data: services });

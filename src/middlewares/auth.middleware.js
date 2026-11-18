@@ -1,26 +1,7 @@
-import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
-import { NextFunction, Request, Response } from 'express';
-
-export interface AuthUser {
-  id?: string;
-  email: string;
-  name?: string;
-  role: 'customer' | 'technician' | 'admin';
-}
-
-// Augment Express Request with the decoded user
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace Express {
-    interface Request {
-      user?: AuthUser;
-    }
-  }
-}
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 export class HttpError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
+  constructor(status, message) {
     super(message);
     this.status = status;
   }
@@ -34,13 +15,13 @@ export class HttpError extends Error {
 const JWKS_URL = process.env.BETTERAUTH_JWKS_URL ?? 'http://localhost:3000/api/auth/jwks';
 const jwks = createRemoteJWKSet(new URL(JWKS_URL));
 
-async function getUserFromToken(req: Request): Promise<AuthUser> {
+async function getUserFromToken(req) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
     throw new HttpError(401, 'Unauthorized: missing or invalid token');
   }
   const token = header.slice(7);
-  let payload: JWTPayload;
+  let payload;
   try {
     ({ payload } = await jwtVerify(token, jwks));
   } catch {
@@ -59,7 +40,7 @@ async function getUserFromToken(req: Request): Promise<AuthUser> {
 }
 
 /** Requires a valid JWT → 401 otherwise. Attaches req.user. */
-export async function verifyToken(req: Request, _res: Response, next: NextFunction) {
+export async function verifyToken(req, _res, next) {
   try {
     req.user = await getUserFromToken(req);
     next();
@@ -68,8 +49,8 @@ export async function verifyToken(req: Request, _res: Response, next: NextFuncti
   }
 }
 
-function requireRole(...roles: AuthUser['role'][]) {
-  return async (req: Request, _res: Response, next: NextFunction) => {
+function requireRole(...roles) {
+  return async (req, _res, next) => {
     try {
       const user = await getUserFromToken(req); // verify here too so role middlewares are standalone
       req.user = user;

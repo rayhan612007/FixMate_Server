@@ -18,19 +18,4 @@ const paymentSchema = new mongoose.Schema(
   },
 );
 
-export interface PaymentDoc extends mongoose.Document {
-  bookingId: string;
-  serviceTitle: string;
-  customerName: string;
-  customerEmail: string;
-  technicianName: string;
-  technicianEmail: string;
-  amount: number;
-  currency: string;
-  transactionId: string;
-  stripeSessionId: string;
-  paymentStatus: string;
-  paidAt: Date;
-}
-
-export const Payment = mongoose.model<PaymentDoc>('Payment', paymentSchema);
+export const Payment = mongoose.model('Payment', paymentSchema);

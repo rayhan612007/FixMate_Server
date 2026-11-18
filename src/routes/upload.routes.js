@@ -1,6 +1,5 @@
-import { Request, Response, NextFunction, Router } from 'express';
-import { HttpError, verifyToken } from '../middlewares/auth.middleware';
-import { AuthRequest } from '../types/express';
+import { Router } from 'express';
+import { HttpError, verifyToken } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
@@ -8,7 +7,7 @@ const router = Router();
  * POST /api/upload — ImgBB upload proxy.
  * Accepts { image: base64 (no data: prefix) } so the ImgBB API key stays server-side.
  */
-router.post('/', verifyToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/', verifyToken, async (req, res, next) => {
   try {
     const apiKey = process.env.IMGBB_API_KEY;
     if (!apiKey) throw new HttpError(500, 'ImgBB is not configured');
@@ -24,7 +23,7 @@ router.post('/', verifyToken, async (req: AuthRequest, res: Response, next: Next
       method: 'POST',
       body: form,
     });
-    const json = (await resp.json()) as { success?: boolean; data?: { url?: string }; error?: { message?: string } };
+    const json = await resp.json();
     if (!json.success || !json.data?.url) {
       throw new HttpError(502, json.error?.message ?? 'Image upload failed');
     }
