@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { Service } from '../models/Service.js';
+import { services } from '../models/Service.js';
+import { toObjectId } from '../db.js';
 import { HttpError, verifyAdmin, verifyTechnician } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -58,8 +59,8 @@ export function buildServicesListQuery(params = {}) {
 router.get('/', async (req, res, next) => {
   try {
     const { filter, sort } = buildServicesListQuery(req.query);
-    const services = await Service.find(filter).sort(sort);
-    res.json({ success: true, data: services });
+    const data = await services().find(filter).sort(sort).toArray();
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -68,12 +69,11 @@ router.get('/', async (req, res, next) => {
 /** GET /api/services/:id — public details (only approved + available) */
 router.get('/:id', async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const idStr = typeof id === 'string' ? id : String(id);
-    if (!idStr.match(/^[0-9a-fA-F]{24}$/)) throw new HttpError(404, 'Service not found');
+    const oid = toObjectId(req.params.id);
+    if (!oid) throw new HttpError(404, 'Service not found');
 
-    const service = await Service.findOne({
-      _id: idStr,
+    const service = await services().findOne({
+      _id: oid,
       approvalStatus: 'approved',
       isAvailable: true,
     });
@@ -108,8 +108,10 @@ router.post('/', verifyTechnician, async (req, res, next) => {
       throw new HttpError(400, 'basePrice must be a positive number');
     }
     if (!CATEGORIES.includes(category)) throw new HttpError(400, 'Invalid category');
+    if (!SERVICE_MODES.includes(serviceMode)) throw new HttpError(400, 'Invalid service mode');
 
-    const service = await Service.create({
+    const now = new Date();
+    const doc = {
       title,
       category,
       description,
@@ -122,8 +124,12 @@ router.post('/', verifyTechnician, async (req, res, next) => {
       technicianEmail: user.email,
       approvalStatus: 'pending',
       isAvailable: true,
-    });
-    res.status(201).json({ success: true, message: 'Service added, waiting for admin approval', data: service });
+      createdAt: now,
+      updatedAt: now,
+    };
+    const result = await services().insertOne(doc);
+    doc._id = result.insertedId;
+    res.status(201).json({ success: true, message: 'Service added, waiting for admin approval', data: doc });
   } catch (err) {
     next(err);
   }
@@ -133,8 +139,8 @@ router.post('/', verifyTechnician, async (req, res, next) => {
 router.get('/my/all', verifyTechnician, async (req, res, next) => {
   try {
     const user = requireUser(req);
-    const services = await Service.find({ technicianEmail: user.email }).sort({ createdAt: -1 });
-    res.json({ success: true, data: services });
+    const data = await services().find({ technicianEmail: user.email }).sort({ createdAt: -1 }).toArray();
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -144,25 +150,44 @@ router.get('/my/all', verifyTechnician, async (req, res, next) => {
 router.patch('/:id', verifyTechnician, async (req, res, next) => {
   try {
     const user = requireUser(req);
-    const { id } = req.params;
-    const service = await Service.findById(id);
+    const oid = toObjectId(req.params.id);
+    if (!oid) throw new HttpError(404, 'Service not found');
+    const service = await services().findOne({ _id: oid });
     if (!service) throw new HttpError(404, 'Service not found');
     if (service.technicianEmail !== user.email) {
       throw new HttpError(403, 'Forbidden: you do not own this service');
     }
 
     const allowed = ['title', 'category', 'description', 'image', 'basePrice', 'estimatedDuration', 'serviceMode', 'serviceArea', 'isAvailable'];
+    const updates = {};
     for (const field of allowed) {
-      if (req.body?.[field] !== undefined) {
-        service[field] = req.body[field];
+      if (req.body?.[field] !== undefined) updates[field] = req.body[field];
+    }
+
+    // No schema validation anymore — enforce the rules server-side here
+    for (const field of ['title', 'description', 'image', 'estimatedDuration', 'serviceArea']) {
+      if (updates[field] !== undefined && (typeof updates[field] !== 'string' || !updates[field].trim())) {
+        throw new HttpError(400, `Invalid field: ${field}`);
       }
     }
+    if (updates.category !== undefined && !CATEGORIES.includes(updates.category)) throw new HttpError(400, 'Invalid category');
+    if (updates.serviceMode !== undefined && !SERVICE_MODES.includes(updates.serviceMode)) throw new HttpError(400, 'Invalid service mode');
+    if (updates.basePrice !== undefined && (typeof updates.basePrice !== 'number' || updates.basePrice <= 0)) {
+      throw new HttpError(400, 'basePrice must be a positive number');
+    }
+    if (updates.isAvailable !== undefined && typeof updates.isAvailable !== 'boolean') {
+      throw new HttpError(400, 'isAvailable must be a boolean');
+    }
+
     if (req.body?.isAvailable === undefined) {
       // any content edit sends the service back to admin approval
-      service.approvalStatus = 'pending';
+      updates.approvalStatus = 'pending';
     }
-    await service.save();
-    res.json({ success: true, message: 'Service updated (re-approval required)', data: service });
+    updates.updatedAt = new Date();
+
+    await services().updateOne({ _id: oid }, { $set: updates });
+    const updated = await services().findOne({ _id: oid });
+    res.json({ success: true, message: 'Service updated (re-approval required)', data: updated });
   } catch (err) {
     next(err);
   }
@@ -172,13 +197,14 @@ router.patch('/:id', verifyTechnician, async (req, res, next) => {
 router.delete('/:id', verifyTechnician, async (req, res, next) => {
   try {
     const user = requireUser(req);
-    const { id } = req.params;
-    const service = await Service.findById(id);
+    const oid = toObjectId(req.params.id);
+    if (!oid) throw new HttpError(404, 'Service not found');
+    const service = await services().findOne({ _id: oid });
     if (!service) throw new HttpError(404, 'Service not found');
     if (service.technicianEmail !== user.email) {
       throw new HttpError(403, 'Forbidden: you do not own this service');
     }
-    await service.deleteOne();
+    await services().deleteOne({ _id: oid });
     res.json({ success: true, message: 'Service deleted' });
   } catch (err) {
     next(err);
@@ -188,15 +214,16 @@ router.delete('/:id', verifyTechnician, async (req, res, next) => {
 /** PATCH /api/services/:id/approval — admin approves/rejects */
 router.patch('/:id/approval', verifyAdmin, async (req, res, next) => {
   try {
-    const { id } = req.params;
     const { approvalStatus } = req.body ?? {};
     if (approvalStatus !== 'approved' && approvalStatus !== 'rejected') {
       throw new HttpError(400, "approvalStatus must be 'approved' or 'rejected'");
     }
-    const service = await Service.findByIdAndUpdate(
-      id,
-      { approvalStatus },
-      { new: true },
+    const oid = toObjectId(req.params.id);
+    if (!oid) throw new HttpError(404, 'Service not found');
+    const service = await services().findOneAndUpdate(
+      { _id: oid },
+      { $set: { approvalStatus, updatedAt: new Date() } },
+      { returnDocument: 'after' },
     );
     if (!service) throw new HttpError(404, 'Service not found');
     res.json({ success: true, message: `Service ${approvalStatus}`, data: service });
@@ -208,8 +235,8 @@ router.patch('/:id/approval', verifyAdmin, async (req, res, next) => {
 /** GET /api/services/admin/all — admin sees all services (any status) */
 router.get('/admin/all', verifyAdmin, async (_req, res, next) => {
   try {
-    const services = await Service.find().sort({ createdAt: -1 });
-    res.json({ success: true, data: services });
+    const data = await services().find({}).sort({ createdAt: -1 }).toArray();
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }

@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { Service } from '../models/Service.js';
-import { Booking } from '../models/Booking.js';
+import { services } from '../models/Service.js';
+import { bookings } from '../models/Booking.js';
+import { toObjectId } from '../db.js';
 import { HttpError, verifyAdmin, verifyCustomer, verifyTechnician } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -42,7 +43,9 @@ router.post('/', verifyCustomer, async (req, res, next) => {
 
     // Load the service server-side — never trust service data from the client
     const idStr = typeof serviceId === 'string' ? serviceId : String(serviceId);
-    const service = await Service.findById(idStr);
+    const serviceOid = toObjectId(idStr);
+    if (!serviceOid) throw new HttpError(404, 'Service not found');
+    const service = await services().findOne({ _id: serviceOid });
     if (!service || service.approvalStatus !== 'approved' || !service.isAvailable) {
       throw new HttpError(404, 'Service not found');
     }
@@ -51,7 +54,7 @@ router.post('/', verifyCustomer, async (req, res, next) => {
     }
 
     // A customer cannot have two active requests for the same service
-    const duplicate = await Booking.findOne({
+    const duplicate = await bookings().findOne({
       customerEmail: user.email,
       serviceId: idStr,
       status: { $in: ACTIVE_STATUSES },
@@ -60,7 +63,8 @@ router.post('/', verifyCustomer, async (req, res, next) => {
       throw new HttpError(409, 'You already have an active request for this service');
     }
 
-    const booking = await Booking.create({
+    const now = new Date();
+    const doc = {
       serviceId: idStr,
       serviceTitle: service.title,
       serviceImage: service.image,
@@ -75,9 +79,14 @@ router.post('/', verifyCustomer, async (req, res, next) => {
       preferredDate: date,
       problemDescription,
       status: 'requested',
+      finalAmount: 0,
       paymentStatus: 'unpaid',
-    });
-    res.status(201).json({ success: true, message: 'Repair request sent', data: booking });
+      createdAt: now,
+      updatedAt: now,
+    };
+    const result = await bookings().insertOne(doc);
+    doc._id = result.insertedId;
+    res.status(201).json({ success: true, message: 'Repair request sent', data: doc });
   } catch (err) {
     next(err);
   }
@@ -87,8 +96,8 @@ router.post('/', verifyCustomer, async (req, res, next) => {
 router.get('/my', verifyCustomer, async (req, res, next) => {
   try {
     const user = requireUser(req);
-    const bookings = await Booking.find({ customerEmail: user.email }).sort({ createdAt: -1 });
-    res.json({ success: true, data: bookings });
+    const data = await bookings().find({ customerEmail: user.email }).sort({ createdAt: -1 }).toArray();
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -98,8 +107,8 @@ router.get('/my', verifyCustomer, async (req, res, next) => {
 router.get('/technician', verifyTechnician, async (req, res, next) => {
   try {
     const user = requireUser(req);
-    const bookings = await Booking.find({ technicianEmail: user.email }).sort({ createdAt: -1 });
-    res.json({ success: true, data: bookings });
+    const data = await bookings().find({ technicianEmail: user.email }).sort({ createdAt: -1 }).toArray();
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -115,30 +124,34 @@ router.patch('/:id/status', verifyTechnician, async (req, res, next) => {
     const { id } = req.params;
     const { status, finalAmount } = req.body ?? {};
 
-    const booking = await Booking.findById(id);
+    const oid = toObjectId(id);
+    if (!oid) throw new HttpError(404, 'Booking not found');
+    const booking = await bookings().findOne({ _id: oid });
     if (!booking) throw new HttpError(404, 'Booking not found');
     if (booking.technicianEmail !== user.email) {
       throw new HttpError(403, 'Forbidden: you do not own this job');
     }
 
     const current = booking.status;
+    const updates = {};
     if (
       (current === 'requested' && (status === 'accepted' || status === 'rejected')) ||
       (current === 'accepted' && status === 'in-progress')
     ) {
-      booking.status = status;
+      updates.status = status;
     } else if (current === 'in-progress' && status === 'completed') {
       if (typeof finalAmount !== 'number' || finalAmount <= 0) {
         throw new HttpError(400, 'finalAmount must be a number greater than 0');
       }
-      booking.status = 'completed';
-      booking.finalAmount = finalAmount;
+      updates.status = 'completed';
+      updates.finalAmount = finalAmount;
     } else {
       throw new HttpError(400, `Invalid status change: ${current} → ${status}`);
     }
+    updates.updatedAt = new Date();
 
-    await booking.save();
-    res.json({ success: true, message: `Job status updated to ${booking.status}`, data: booking });
+    await bookings().updateOne({ _id: oid }, { $set: updates });
+    res.json({ success: true, message: `Job status updated to ${updates.status}`, data: { ...booking, ...updates } });
   } catch (err) {
     next(err);
   }
@@ -150,7 +163,9 @@ router.patch('/:id/cancel', verifyCustomer, async (req, res, next) => {
     const user = requireUser(req);
     const { id } = req.params;
 
-    const booking = await Booking.findById(id);
+    const oid = toObjectId(id);
+    if (!oid) throw new HttpError(404, 'Booking not found');
+    const booking = await bookings().findOne({ _id: oid });
     if (!booking) throw new HttpError(404, 'Booking not found');
     if (booking.customerEmail !== user.email) {
       throw new HttpError(403, 'Forbidden: you do not own this booking');
@@ -158,9 +173,9 @@ router.patch('/:id/cancel', verifyCustomer, async (req, res, next) => {
     if (booking.status !== 'requested') {
       throw new HttpError(400, 'Only a requested job can be cancelled');
     }
-    booking.status = 'cancelled';
-    await booking.save();
-    res.json({ success: true, message: 'Booking cancelled', data: booking });
+    const updatedAt = new Date();
+    await bookings().updateOne({ _id: oid }, { $set: { status: 'cancelled', updatedAt } });
+    res.json({ success: true, message: 'Booking cancelled', data: { ...booking, status: 'cancelled', updatedAt } });
   } catch (err) {
     next(err);
   }
@@ -169,8 +184,8 @@ router.patch('/:id/cancel', verifyCustomer, async (req, res, next) => {
 /** GET /api/bookings/admin/all — admin sees every booking (read-only) */
 router.get('/admin/all', verifyAdmin, async (_req, res, next) => {
   try {
-    const bookings = await Booking.find().sort({ createdAt: -1 });
-    res.json({ success: true, data: bookings });
+    const data = await bookings().find({}).sort({ createdAt: -1 }).toArray();
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }

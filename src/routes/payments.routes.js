@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
 import { HttpError, verifyAdmin, verifyCustomer } from '../middlewares/auth.middleware.js';
-import { Booking } from '../models/Booking.js';
-import { Payment } from '../models/Payment.js';
+import { bookings } from '../models/Booking.js';
+import { payments } from '../models/Payment.js';
+import { toObjectId } from '../db.js';
 
 const router = Router();
 
@@ -21,43 +22,50 @@ function requireUser(req) {
 
 /**
  * Idempotent payment saving — called by BOTH the success-page verification and
- * the Stripe webhook. The same payment must never be saved twice
- * (uniqueness enforced on stripeSessionId, checked again here).
+ * the Stripe webhook. The same payment must never be saved twice: uniqueness is
+ * enforced by MongoDB (unique index on stripeSessionId) and checked again here.
  */
 export async function savePaymentFromSession(session) {
-  const existing = await Payment.findOne({ stripeSessionId: session.id });
+  const existing = await payments().findOne({ stripeSessionId: session.id });
   if (existing) return 'duplicate';
 
   const bookingId = session.metadata?.bookingId;
   if (!bookingId) throw new HttpError(400, 'Session metadata is missing bookingId');
 
-  const booking = await Booking.findById(bookingId);
+  const bookingOid = toObjectId(bookingId);
+  if (!bookingOid) throw new HttpError(404, 'Booking not found for this payment');
+  const booking = await bookings().findOne({ _id: bookingOid });
   if (!booking) throw new HttpError(404, 'Booking not found for this payment');
 
   // Mark the booking paid (only once)
   if (booking.paymentStatus !== 'paid') {
-    booking.paymentStatus = 'paid';
-    await booking.save();
+    await bookings().updateOne({ _id: bookingOid }, { $set: { paymentStatus: 'paid', updatedAt: new Date() } });
   }
 
   // Re-check after marking paid (webhook + verify may race)
-  const dup = await Payment.findOne({ stripeSessionId: session.id });
+  const dup = await payments().findOne({ stripeSessionId: session.id });
   if (dup) return 'duplicate';
 
-  await Payment.create({
-    bookingId,
-    serviceTitle: booking.serviceTitle,
-    customerName: booking.customerName,
-    customerEmail: booking.customerEmail,
-    technicianName: booking.technicianName,
-    technicianEmail: booking.technicianEmail,
-    amount: booking.finalAmount,
-    currency: 'usd',
-    transactionId: typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? '',
-    stripeSessionId: session.id,
-    paymentStatus: 'paid',
-    paidAt: new Date(),
-  });
+  try {
+    await payments().insertOne({
+      bookingId,
+      serviceTitle: booking.serviceTitle,
+      customerName: booking.customerName,
+      customerEmail: booking.customerEmail,
+      technicianName: booking.technicianName,
+      technicianEmail: booking.technicianEmail,
+      amount: booking.finalAmount,
+      currency: 'usd',
+      transactionId: typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? '',
+      stripeSessionId: session.id,
+      paymentStatus: 'paid',
+      paidAt: new Date(),
+    });
+  } catch (err) {
+    // Unique index on stripeSessionId won the race → the other writer already saved it
+    if (err?.code === 11000) return 'duplicate';
+    throw err;
+  }
   return 'saved';
 }
 
@@ -68,7 +76,8 @@ router.post('/create-checkout-session', verifyCustomer, async (req, res, next) =
     const { bookingId } = req.body ?? {};
 
     // Never trust amounts from the client — load the booking server-side
-    const booking = await Booking.findById(typeof bookingId === 'string' ? bookingId : String(bookingId ?? ''));
+    const bookingOid = toObjectId(typeof bookingId === 'string' ? bookingId : String(bookingId ?? ''));
+    const booking = bookingOid ? await bookings().findOne({ _id: bookingOid }) : null;
     if (!booking) throw new HttpError(404, 'Booking not found');
     if (booking.customerEmail !== user.email) {
       throw new HttpError(403, 'Forbidden: you do not own this booking');
@@ -121,7 +130,8 @@ router.get('/verify', verifyCustomer, async (req, res, next) => {
     }
 
     const result = await savePaymentFromSession(session);
-    const booking = await Booking.findById(session.metadata?.bookingId);
+    const bookingOid = toObjectId(session.metadata?.bookingId);
+    const booking = bookingOid ? await bookings().findOne({ _id: bookingOid }) : null;
     res.json({
       success: true,
       duplicate: result === 'duplicate',
@@ -141,8 +151,8 @@ router.get('/verify', verifyCustomer, async (req, res, next) => {
 router.get('/my', verifyCustomer, async (req, res, next) => {
   try {
     const user = requireUser(req);
-    const payments = await Payment.find({ customerEmail: user.email }).sort({ paidAt: -1 });
-    res.json({ success: true, data: payments });
+    const data = await payments().find({ customerEmail: user.email }).sort({ paidAt: -1 }).toArray();
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -151,9 +161,9 @@ router.get('/my', verifyCustomer, async (req, res, next) => {
 /** GET /api/payments/admin/all — admin transactions with total revenue */
 router.get('/admin/all', verifyAdmin, async (_req, res, next) => {
   try {
-    const payments = await Payment.find().sort({ paidAt: -1 });
-    const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
-    res.json({ success: true, totalRevenue, data: payments });
+    const data = await payments().find({}).sort({ paidAt: -1 }).toArray();
+    const totalRevenue = data.reduce((sum, p) => sum + p.amount, 0);
+    res.json({ success: true, totalRevenue, data });
   } catch (err) {
     next(err);
   }

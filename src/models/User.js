@@ -1,21 +1,13 @@
-import mongoose from 'mongoose';
+import { getDb } from '../db.js';
 
 /**
- * BetterAuth stores users in its own "user" collection (singular).
- * We treat that collection as our users collection — this model reads/updates it.
- * role/phone/area/bio are BetterAuth additionalFields.
+ * `user` collection — BetterAuth (Next.js) owns this collection; we only read/update it.
+ * role/phone/area/bio are BetterAuth additionalFields. Native mongodb driver (no mongoose).
+ *
+ * Document shape:
+ * { _id: ObjectId, name, email, image, role: 'customer'|'technician'|'admin',
+ *   phone, area, bio, createdAt: Date, updatedAt: Date }
  */
-const userSchema = new mongoose.Schema(
-  {
-    name: { type: String },
-    email: { type: String, required: true, unique: true },
-    image: { type: String },
-    role: { type: String, enum: ['customer', 'technician', 'admin'], default: 'customer' },
-    phone: { type: String },
-    area: { type: String },
-    bio: { type: String },
-  },
-  { collection: 'user', strict: false, timestamps: true },
-);
-
-export const User = mongoose.model('User', userSchema);
+export function users() {
+  return getDb().collection('user');
+}
