@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
-import { HttpError, getCurrentUser, verifyAdmin, verifyCustomer } from '../middlewares/auth.middleware.js';
+import {
+  HttpError,
+  getCurrentUser,
+  verifyAdmin,
+  verifyCustomer,
+  verifyToken,
+} from '../middlewares/auth.middleware.js';
 import { bookings } from '../models/Booking.js';
 import { payments } from '../models/Payment.js';
 import { toObjectId } from '../db.js';
@@ -80,7 +86,7 @@ export async function savePaymentFromSession(session) {
 }
 
 /** POST /api/payments/create-checkout-session — pay a completed, unpaid booking. */
-router.post('/create-checkout-session', verifyCustomer, async (req, res, next) => {
+router.post('/create-checkout-session', verifyToken, verifyCustomer, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const { bookingId } = req.body ?? {};
@@ -130,7 +136,7 @@ router.post('/create-checkout-session', verifyCustomer, async (req, res, next) =
 });
 
 /** GET /api/payments/verify?session_id=... — success-page verification. */
-router.get('/verify', verifyCustomer, async (req, res, next) => {
+router.get('/verify', verifyToken, verifyCustomer, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const sessionId = req.query.session_id;
@@ -168,7 +174,7 @@ router.get('/verify', verifyCustomer, async (req, res, next) => {
 });
 
 /** GET /api/payments/my — customer payment history. */
-router.get('/my', verifyCustomer, async (req, res, next) => {
+router.get('/my', verifyToken, verifyCustomer, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const data = await payments()
@@ -181,8 +187,8 @@ router.get('/my', verifyCustomer, async (req, res, next) => {
   }
 });
 
-/** GET /api/payments/admin/all — admin transactions plus total revenue. */
-router.get('/admin/all', verifyAdmin, async (_req, res, next) => {
+/** GET /api/payments/admin/all and /api/admin/payments — admin transactions. */
+export async function listAdminPayments(_req, res, next) {
   try {
     const data = await payments().find({}).sort({ paidAt: -1 }).toArray();
     const totalRevenue = data.reduce((sum, payment) => sum + payment.amount, 0);
@@ -190,7 +196,9 @@ router.get('/admin/all', verifyAdmin, async (_req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+}
+
+router.get('/admin/all', verifyToken, verifyAdmin, listAdminPayments);
 
 /**
  * POST /api/payments/webhook — Stripe webhook (raw body, signature-verified).

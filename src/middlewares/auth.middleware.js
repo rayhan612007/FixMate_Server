@@ -61,7 +61,7 @@ export async function verifyToken(req, _res, next) {
 function requireRole(...roles) {
   return async (req, _res, next) => {
     try {
-      const user = await getUserFromToken(req);
+      const user = req.user ?? await getUserFromToken(req);
       req.user = user;
 
       if (!roles.includes(user.role)) {

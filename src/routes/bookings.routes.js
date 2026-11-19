@@ -8,6 +8,7 @@ import {
   verifyAdmin,
   verifyCustomer,
   verifyTechnician,
+  verifyToken,
 } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -50,7 +51,7 @@ function parsePreferredDate(value) {
  * Only customers may book, and they may not have two active requests for the
  * same service. The service is always loaded from the database.
  */
-router.post('/', verifyCustomer, async (req, res, next) => {
+router.post('/', verifyToken, verifyCustomer, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const { serviceId, customerPhone, address, preferredDate, problemDescription } = req.body ?? {};
@@ -121,7 +122,7 @@ router.post('/', verifyCustomer, async (req, res, next) => {
 });
 
 /** GET /api/bookings/my — customer's own bookings. */
-router.get('/my', verifyCustomer, async (req, res, next) => {
+router.get('/my', verifyToken, verifyCustomer, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const data = await bookings()
@@ -135,7 +136,7 @@ router.get('/my', verifyCustomer, async (req, res, next) => {
 });
 
 /** GET /api/bookings/technician — jobs assigned to the logged-in technician. */
-router.get('/technician', verifyTechnician, async (req, res, next) => {
+router.get('/technician', verifyToken, verifyTechnician, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const data = await bookings()
@@ -153,7 +154,7 @@ router.get('/technician', verifyTechnician, async (req, res, next) => {
  * Pipeline: requested → accepted | rejected; accepted → in-progress;
  * in-progress → completed (requires finalAmount > 0).
  */
-router.patch('/:id/status', verifyTechnician, async (req, res, next) => {
+router.patch('/:id/status', verifyToken, verifyTechnician, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const { status, finalAmount } = req.body ?? {};
@@ -189,7 +190,7 @@ router.patch('/:id/status', verifyTechnician, async (req, res, next) => {
 });
 
 /** PATCH /api/bookings/:id/cancel — customer cancels own booking while still 'requested'. */
-router.patch('/:id/cancel', verifyCustomer, async (req, res, next) => {
+router.patch('/:id/cancel', verifyToken, verifyCustomer, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const { oid, booking } = await findBooking(req.params.id);
@@ -214,14 +215,16 @@ router.patch('/:id/cancel', verifyCustomer, async (req, res, next) => {
   }
 });
 
-/** GET /api/bookings/admin/all — admin sees every booking (read-only). */
-router.get('/admin/all', verifyAdmin, async (_req, res, next) => {
+/** GET /api/bookings/admin/all and /api/admin/bookings — admins see all bookings. */
+export async function listAdminBookings(_req, res, next) {
   try {
     const data = await bookings().find({}).sort({ createdAt: -1 }).toArray();
     res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
-});
+}
+
+router.get('/admin/all', verifyToken, verifyAdmin, listAdminBookings);
 
 export default router;

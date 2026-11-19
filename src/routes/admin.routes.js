@@ -3,13 +3,17 @@ import { users } from '../models/User.js';
 import { services } from '../models/Service.js';
 import { toObjectId } from '../db.js';
 import { HttpError, getCurrentUser, verifyAdmin, verifyToken } from '../middlewares/auth.middleware.js';
+import { listAdminBookings } from './bookings.routes.js';
+import { listAdminPayments } from './payments.routes.js';
+import { updateServiceApproval } from './services.routes.js';
+import { updateOwnProfile } from './users.routes.js';
 
 const router = Router();
 
 const ROLES = ['customer', 'technician', 'admin'];
 
 /** GET /api/admin/users — admin lists all users. */
-router.get('/users', verifyAdmin, async (_req, res, next) => {
+router.get('/users', verifyToken, verifyAdmin, async (_req, res, next) => {
   try {
     const data = await users().find({}).sort({ createdAt: -1 }).toArray();
     res.json({ success: true, data });
@@ -19,7 +23,7 @@ router.get('/users', verifyAdmin, async (_req, res, next) => {
 });
 
 /** PATCH /api/admin/users/:id/role — admin changes a role; not their own. */
-router.patch('/users/:id/role', verifyAdmin, async (req, res, next) => {
+router.patch('/users/:id/role', verifyToken, verifyAdmin, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const { role } = req.body ?? {};
@@ -51,7 +55,7 @@ router.patch('/users/:id/role', verifyAdmin, async (req, res, next) => {
 });
 
 /** GET /api/admin/stats — dashboard overview cards. */
-router.get('/stats', verifyAdmin, async (_req, res, next) => {
+router.get('/stats', verifyToken, verifyAdmin, async (_req, res, next) => {
   try {
     const [totalUsers, totalTechnicians, pendingServices] = await Promise.all([
       users().countDocuments(),
@@ -65,31 +69,12 @@ router.get('/stats', verifyAdmin, async (_req, res, next) => {
   }
 });
 
-/** PATCH /api/admin/profile — any logged-in user updates their profile. */
-router.patch('/profile', verifyToken, async (req, res, next) => {
-  try {
-    const user = getCurrentUser(req);
+/** Admin-only data routes use the same handlers as their existing aliases. */
+router.get('/bookings', verifyToken, verifyAdmin, listAdminBookings);
+router.patch('/services/:id/approval', verifyToken, verifyAdmin, updateServiceApproval);
+router.get('/payments', verifyToken, verifyAdmin, listAdminPayments);
 
-    const target = await users().findOne({ email: user.email });
-    if (!target) throw new HttpError(404, 'User not found');
-
-    const { name, phone, area, bio, image } = req.body ?? {};
-    const updates = {};
-    if (typeof name === 'string' && name.trim()) updates.name = name;
-    if (typeof phone === 'string') updates.phone = phone;
-    if (typeof area === 'string') updates.area = area;
-    if (typeof bio === 'string') updates.bio = bio;
-    if (typeof image === 'string' && image) updates.image = image;
-
-    if (Object.keys(updates).length > 0) {
-      updates.updatedAt = new Date();
-      await users().updateOne({ _id: target._id }, { $set: updates });
-    }
-
-    res.json({ success: true, message: 'Profile updated', data: { ...target, ...updates } });
-  } catch (err) {
-    next(err);
-  }
-});
+/** Legacy path retained for clients that still call /api/admin/profile. */
+router.patch('/profile', verifyToken, updateOwnProfile);
 
 export default router;

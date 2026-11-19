@@ -7,6 +7,7 @@ import {
   getCurrentUser,
   verifyAdmin,
   verifyTechnician,
+  verifyToken,
 } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -172,7 +173,7 @@ router.get('/:id', async (req, res, next) => {
 });
 
 /** POST /api/services — technician adds a service; it starts as pending. */
-router.post('/', verifyTechnician, async (req, res, next) => {
+router.post('/', verifyToken, verifyTechnician, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const body = req.body ?? {};
@@ -227,7 +228,7 @@ router.post('/', verifyTechnician, async (req, res, next) => {
 });
 
 /** GET /api/services/my/all — technician's own services (any approval status). */
-router.get('/my/all', verifyTechnician, async (req, res, next) => {
+router.get('/my/all', verifyToken, verifyTechnician, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const data = await services()
@@ -241,7 +242,7 @@ router.get('/my/all', verifyTechnician, async (req, res, next) => {
 });
 
 /** PATCH /api/services/:id — technician edits own service; approval resets to pending. */
-router.patch('/:id', verifyTechnician, async (req, res, next) => {
+router.patch('/:id', verifyToken, verifyTechnician, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const { oid } = await findOwnedService(req.params.id, user);
@@ -292,7 +293,7 @@ router.patch('/:id', verifyTechnician, async (req, res, next) => {
 });
 
 /** DELETE /api/services/:id — technician deletes own service. */
-router.delete('/:id', verifyTechnician, async (req, res, next) => {
+router.delete('/:id', verifyToken, verifyTechnician, async (req, res, next) => {
   try {
     const user = getCurrentUser(req);
     const { oid } = await findOwnedService(req.params.id, user);
@@ -304,8 +305,8 @@ router.delete('/:id', verifyTechnician, async (req, res, next) => {
   }
 });
 
-/** PATCH /api/services/:id/approval — admin approves or rejects a service. */
-router.patch('/:id/approval', verifyAdmin, async (req, res, next) => {
+/** PATCH /api/services/:id/approval and /api/admin/services/:id/approval. */
+export async function updateServiceApproval(req, res, next) {
   try {
     const { approvalStatus } = req.body ?? {};
     if (approvalStatus !== 'approved' && approvalStatus !== 'rejected') {
@@ -326,10 +327,12 @@ router.patch('/:id/approval', verifyAdmin, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+}
+
+router.patch('/:id/approval', verifyToken, verifyAdmin, updateServiceApproval);
 
 /** GET /api/services/admin/all — admin sees all services (any status). */
-router.get('/admin/all', verifyAdmin, async (_req, res, next) => {
+router.get('/admin/all', verifyToken, verifyAdmin, async (_req, res, next) => {
   try {
     const data = await services().find({}).sort({ createdAt: -1 }).toArray();
     res.json({ success: true, data });

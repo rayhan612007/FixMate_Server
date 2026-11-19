@@ -7,6 +7,7 @@ import bookingsRouter from './routes/bookings.routes.js';
 import paymentsRouter, { stripeWebhook } from './routes/payments.routes.js';
 import adminRouter from './routes/admin.routes.js';
 import uploadRouter from './routes/upload.routes.js';
+import usersRouter from './routes/users.routes.js';
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use('/api/services', servicesRouter);
 app.use('/api/bookings', bookingsRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/users', usersRouter);
 app.use('/api/upload', uploadRouter);
 
 // Returns the decoded JWT user (handy for checking auth while developing).
