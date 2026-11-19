@@ -70,6 +70,20 @@ async function addTechnicianImages(data) {
   }));
 }
 
+async function addTechnicianProfile(service) {
+  const technician = await users().findOne(
+    { email: service.technicianEmail },
+    { projection: { image: 1, area: 1, bio: 1 } },
+  );
+
+  return {
+    ...service,
+    technicianImage: technician?.image ?? '',
+    technicianArea: technician?.area ?? '',
+    technicianBio: technician?.bio ?? '',
+  };
+}
+
 /** Escapes regex symbols so search text is matched literally (e.g. "laptop (dell)"). */
 function escapeRegex(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -166,7 +180,7 @@ router.get('/:id', async (req, res, next) => {
     });
     if (!service) throw new HttpError(404, 'Service not found');
 
-    res.json({ success: true, data: service });
+    res.json({ success: true, data: await addTechnicianProfile(service) });
   } catch (err) {
     next(err);
   }
