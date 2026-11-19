@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { services } from '../models/Service.js';
+import { users } from '../models/User.js';
 import { toObjectId } from '../db.js';
 import {
   HttpError,
@@ -52,6 +53,21 @@ const EDITABLE_FIELDS = [
   'isAvailable',
 ];
 const REQUIRED_EDIT_TEXT_FIELDS = ['title', 'description', 'image', 'estimatedDuration', 'serviceArea'];
+
+async function addTechnicianImages(data) {
+  const emails = [...new Set(data.map((service) => service.technicianEmail).filter(Boolean))];
+  if (emails.length === 0) return data;
+
+  const technicians = await users()
+    .find({ email: { $in: emails } }, { projection: { email: 1, image: 1 } })
+    .toArray();
+  const imageByEmail = new Map(technicians.map(({ email, image }) => [email, image]));
+
+  return data.map((service) => ({
+    ...service,
+    technicianImage: imageByEmail.get(service.technicianEmail) ?? '',
+  }));
+}
 
 /** Escapes regex symbols so search text is matched literally (e.g. "laptop (dell)"). */
 function escapeRegex(text) {
@@ -127,7 +143,9 @@ export function buildServicesListQuery(params = {}) {
 router.get('/', async (req, res, next) => {
   try {
     const { filter, sort } = buildServicesListQuery(req.query);
-    const data = await services().find(filter).sort(sort).toArray();
+    const data = await addTechnicianImages(
+      await services().find(filter).sort(sort).toArray(),
+    );
     res.json({ success: true, data });
   } catch (err) {
     next(err);
