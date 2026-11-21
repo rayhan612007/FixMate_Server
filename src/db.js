@@ -3,7 +3,12 @@ import { MongoClient, ObjectId } from 'mongodb';
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.MONGODB_DB;
 
-const client = new MongoClient(MONGODB_URI);
+const globalForMongo = globalThis;
+const client = globalForMongo.mongoClient ?? new MongoClient(MONGODB_URI, {
+  maxPoolSize: 10,
+  maxIdleTimeMS: 60000,
+});
+globalForMongo.mongoClient = client;
 
 export async function connectToMongoDB() {
   try {
