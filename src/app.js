@@ -23,7 +23,7 @@ app.use(
 app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 
 // Generous limit so base64 image uploads (avatar/service photos) are accepted.
-app.use(express.json({ limit: '100mb' }));
+app.use(express.json());
 
 app.get('/', (_req, res) => {
   res.send({ message: 'This Fixmate Home Route' });
