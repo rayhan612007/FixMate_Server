@@ -22,6 +22,13 @@ const CATEGORIES = [
   'Electrical',
 ];
 const SERVICE_MODES = ['Home Visit', 'Shop Drop-off'];
+const DEFAULT_PAGE_SIZE = 8;
+const MAX_PAGE_SIZE = 50;
+
+function positiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 // Fields the public keyword search looks at.
 const SEARCHABLE_FIELDS = [
@@ -154,14 +161,37 @@ export function buildServicesListQuery(params = {}) {
   return { filter, sort: sortQuery };
 }
 
-/** GET /api/services — public list with search, filter and sort. */
+/** GET /api/services — public list with search, filter, sort and optional pagination. */
 router.get('/', async (req, res, next) => {
   try {
     const { filter, sort } = buildServicesListQuery(req.query);
+    const paginated = req.query.page !== undefined || req.query.limit !== undefined;
+    const limit = Math.min(positiveInt(req.query.limit, DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
+    const total = await services().countDocuments(filter);
+    const totalPages = paginated ? Math.max(1, Math.ceil(total / limit)) : 1;
+    const page = paginated ? Math.min(positiveInt(req.query.page, 1), totalPages) : 1;
+
     const data = await addTechnicianImages(
-      await services().find(filter).sort(sort).toArray(),
+      await services()
+        .find(filter)
+        .sort(sort)
+        .skip(paginated ? (page - 1) * limit : 0)
+        .limit(paginated ? limit : 0)
+        .toArray(),
     );
-    res.json({ success: true, data });
+
+    res.json({
+      success: true,
+      data,
+      pagination: {
+        page,
+        limit: paginated ? limit : total,
+        total,
+        totalPages,
+        hasPrev: paginated && page > 1,
+        hasNext: paginated && page < totalPages,
+      },
+    });
   } catch (err) {
     next(err);
   }
