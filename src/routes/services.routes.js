@@ -318,7 +318,7 @@ router.patch('/:id', verifyToken, verifyTechnician, async (req, res, next) => {
     }
 
     // Any content edit needs admin approval again; toggling availability does not.
-    if (body.isAvailable === undefined) {
+    if (Object.keys(updates).some((field) => field !== 'isAvailable')) {
       updates.approvalStatus = 'pending';
     }
     updates.updatedAt = new Date();

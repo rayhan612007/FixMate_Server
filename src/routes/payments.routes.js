@@ -223,7 +223,10 @@ export async function stripeWebhook(req, res) {
 
   try {
     if (event.type === 'checkout.session.completed') {
-      await savePaymentFromSession(event.data.object);
+      const session = event.data.object;
+      if (session.payment_status === 'paid') {
+        await savePaymentFromSession(session);
+      }
     }
     res.json({ received: true });
   } catch {
