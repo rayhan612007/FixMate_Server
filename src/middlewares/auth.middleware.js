@@ -12,7 +12,7 @@ export class HttpError extends Error {
  * its public JWKS endpoint instead of sharing a secret.
  * Set BETTERAUTH_JWKS_URL to <frontend>/api/auth/jwks.
  */
-const JWKS_URL = process.env.BETTERAUTH_JWKS_URL ?? 'http://localhost:3000/api/auth/jwks';
+const JWKS_URL = process.env.BETTERAUTH_JWKS_URL;
 const jwks = createRemoteJWKSet(new URL(JWKS_URL));
 
 /** Reads and verifies the Bearer token, then returns the user we care about. */
